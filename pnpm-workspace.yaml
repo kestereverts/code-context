@@ -2,5 +2,59 @@ packages:
   - packages/*
   - examples/*
 
+overrides:
+  tree-sitter: "file:./patches/tree-sitter-0.25.0.tgz"
+
+allowBuilds:
+  '@tree-sitter-grammars/tree-sitter-hcl': true
+  '@vscode/vsce-sign': set this to true or false
+  esbuild: set this to true or false
+  faiss-node: true
+  keytar: set this to true or false
+  protobufjs: true
+  tree-sitter: true
+  tree-sitter-angular: true
+  tree-sitter-bash: true
+  tree-sitter-c: set this to true or false
+  tree-sitter-c-sharp: true
+  tree-sitter-cli: true
+  tree-sitter-cpp: true
+  tree-sitter-css: true
+  tree-sitter-elixir: true
+  tree-sitter-go: true
+  tree-sitter-graphql: true
+  tree-sitter-html: true
+  tree-sitter-java: true
+  tree-sitter-javascript: true
+  tree-sitter-jinja2: true
+  tree-sitter-json: true
+  tree-sitter-kotlin: true
+  tree-sitter-markdown: true
+  tree-sitter-nginx: true
+  tree-sitter-php: true
+  tree-sitter-prisma: true
+  tree-sitter-pug: true
+  tree-sitter-python: true
+  tree-sitter-ruby: true
+  tree-sitter-rust: true
+  tree-sitter-scala: true
+  tree-sitter-scss: true
+  tree-sitter-sql: true
+  tree-sitter-svelte: true
+  tree-sitter-toml: true
+  tree-sitter-typescript: true
+  tree-sitter-vue: true
+  tree-sitter-xml: true
+  tree-sitter-yaml: true
+  unrs-resolver: true
+
 ignoredBuiltDependencies:
   - faiss-node
+
+patchedDependencies:
+  tree-sitter-jinja2@0.2.0: patches/tree-sitter-jinja2@0.2.0.patch
+  tree-sitter-markdown@0.7.1: patches/tree-sitter-markdown@0.7.1.patch
+  tree-sitter-sql@0.1.0: patches/tree-sitter-sql@0.1.0.patch
+  tree-sitter-toml@0.5.1: patches/tree-sitter-toml@0.5.1.patch
+  tree-sitter-vue@0.2.1: patches/tree-sitter-vue@0.2.1.patch
+  tree-sitter-yaml@0.5.0: patches/tree-sitter-yaml@0.5.0.patch

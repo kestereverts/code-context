@@ -1,16 +1,36 @@
 import Parser from "tree-sitter";
 import { Splitter, CodeChunk } from "./index";
 
-// Language parsers
+// Language parsers — original languages
 const JavaScript = require("tree-sitter-javascript");
 const TypeScript = require("tree-sitter-typescript").typescript;
+const TSX = require("tree-sitter-typescript").tsx;
 const Python = require("tree-sitter-python");
 const Java = require("tree-sitter-java");
 const Cpp = require("tree-sitter-cpp");
 const Go = require("tree-sitter-go");
 const Rust = require("tree-sitter-rust");
-const CSharp = require("tree-sitter-c-sharp");
+const CSharp = require("tree-sitter-c-sharp").language;
 const Scala = require("tree-sitter-scala");
+// Extended web-dev languages
+const Angular = require("tree-sitter-angular").language;
+const Bash = require("tree-sitter-bash").language;
+const CSS = require("tree-sitter-css").language;
+const Elixir = require("tree-sitter-elixir").language;
+const HCL = require("@tree-sitter-grammars/tree-sitter-hcl").language;
+const HTML = require("tree-sitter-html").language;
+const Jinja2 = require("tree-sitter-jinja2").language;
+const JSON_ = require("tree-sitter-json").language;
+const Kotlin = require("tree-sitter-kotlin").language;
+const Markdown = require("tree-sitter-markdown").language;
+const PHP = require("tree-sitter-php").php;
+const Prisma = require("tree-sitter-prisma").language;
+const Ruby = require("tree-sitter-ruby").language;
+const SCSS = require("tree-sitter-scss").language;
+const SQL = require("tree-sitter-sql").language;
+const TOML = require("tree-sitter-toml").language;
+const Vue = require("tree-sitter-vue").language;
+const YAML = require("tree-sitter-yaml").language;
 
 // Node types that represent logical code units
 const SPLITTABLE_NODE_TYPES = {
@@ -75,6 +95,123 @@ const SPLITTABLE_NODE_TYPES = {
     "class_declaration",
     "interface_declaration",
     "constructor_declaration",
+  ],
+  tsx: [
+    "function_declaration",
+    "arrow_function",
+    "class_declaration",
+    "method_definition",
+    "export_statement",
+    "interface_declaration",
+    "type_alias_declaration",
+    "jsx_element",
+    "jsx_self_closing_element",
+  ],
+  css: [
+    "rule_set",
+    "media_statement",
+    "keyframes_statement",
+    "supports_statement",
+  ],
+  html: [
+    "element",
+    "script_element",
+    "style_element",
+  ],
+  json: [
+    "pair",
+  ],
+  bash: [
+    "function_definition",
+    "if_statement",
+    "for_statement",
+    "while_statement",
+    "case_statement",
+  ],
+  ruby: [
+    "method",
+    "class",
+    "module",
+    "singleton_method",
+    "singleton_class",
+  ],
+  angular: [
+    "element",
+    "structural_directive",
+    "script_element",
+    "style_element",
+  ],
+  elixir: [
+    "call",
+    "anonymous_function",
+  ],
+  hcl: [
+    "block",
+    "attribute",
+  ],
+  jinja2: [
+    "block_statement",
+    "macro_statement",
+    "for_statement",
+    "if_statement",
+  ],
+  kotlin: [
+    "function_declaration",
+    "class_declaration",
+    "object_declaration",
+    "companion_object",
+    "secondary_constructor",
+  ],
+  markdown: [
+    "atx_heading",
+    "setext_heading",
+    "fenced_code_block",
+    "block_quote",
+  ],
+  php: [
+    "function_definition",
+    "class_declaration",
+    "method_declaration",
+    "interface_declaration",
+    "trait_declaration",
+    "namespace_definition",
+    "enum_declaration",
+  ],
+  prisma: [
+    "model_declaration",
+    "enum_declaration",
+    "generator_declaration",
+    "datasource_declaration",
+    "type_declaration",
+    "view_declaration",
+  ],
+  scss: [
+    "rule_set",
+    "mixin_statement",
+    "function_statement",
+    "at_rule",
+  ],
+  sql: [
+    "select_statement",
+    "create_function_statement",
+    "create_table_statement",
+    "create_index_statement",
+    "create_type_statement",
+  ],
+  toml: [
+    "table",
+    "table_array_element",
+    "pair",
+  ],
+  vue: [
+    "element",
+    "script_element",
+    "style_element",
+    "template_element",
+  ],
+  yaml: [
+    "block_mapping_pair",
+    "document",
   ],
 };
 
@@ -196,6 +333,39 @@ export class AstCodeSplitter implements Splitter {
       cs: { parser: CSharp, nodeTypes: SPLITTABLE_NODE_TYPES.csharp },
       csharp: { parser: CSharp, nodeTypes: SPLITTABLE_NODE_TYPES.csharp },
       scala: { parser: Scala, nodeTypes: SPLITTABLE_NODE_TYPES.scala },
+      tsx: { parser: TSX, nodeTypes: SPLITTABLE_NODE_TYPES.tsx },
+      css: { parser: CSS, nodeTypes: SPLITTABLE_NODE_TYPES.css },
+      html: { parser: HTML, nodeTypes: SPLITTABLE_NODE_TYPES.html },
+      htm: { parser: HTML, nodeTypes: SPLITTABLE_NODE_TYPES.html },
+      json: { parser: JSON_, nodeTypes: SPLITTABLE_NODE_TYPES.json },
+      bash: { parser: Bash, nodeTypes: SPLITTABLE_NODE_TYPES.bash },
+      sh: { parser: Bash, nodeTypes: SPLITTABLE_NODE_TYPES.bash },
+      zsh: { parser: Bash, nodeTypes: SPLITTABLE_NODE_TYPES.bash },
+      ruby: { parser: Ruby, nodeTypes: SPLITTABLE_NODE_TYPES.ruby },
+      rb: { parser: Ruby, nodeTypes: SPLITTABLE_NODE_TYPES.ruby },
+      angular: { parser: Angular, nodeTypes: SPLITTABLE_NODE_TYPES.angular },
+      elixir: { parser: Elixir, nodeTypes: SPLITTABLE_NODE_TYPES.elixir },
+      ex: { parser: Elixir, nodeTypes: SPLITTABLE_NODE_TYPES.elixir },
+      exs: { parser: Elixir, nodeTypes: SPLITTABLE_NODE_TYPES.elixir },
+      hcl: { parser: HCL, nodeTypes: SPLITTABLE_NODE_TYPES.hcl },
+      terraform: { parser: HCL, nodeTypes: SPLITTABLE_NODE_TYPES.hcl },
+      tf: { parser: HCL, nodeTypes: SPLITTABLE_NODE_TYPES.hcl },
+      jinja2: { parser: Jinja2, nodeTypes: SPLITTABLE_NODE_TYPES.jinja2 },
+      jinja: { parser: Jinja2, nodeTypes: SPLITTABLE_NODE_TYPES.jinja2 },
+      j2: { parser: Jinja2, nodeTypes: SPLITTABLE_NODE_TYPES.jinja2 },
+      kotlin: { parser: Kotlin, nodeTypes: SPLITTABLE_NODE_TYPES.kotlin },
+      kt: { parser: Kotlin, nodeTypes: SPLITTABLE_NODE_TYPES.kotlin },
+      kts: { parser: Kotlin, nodeTypes: SPLITTABLE_NODE_TYPES.kotlin },
+      markdown: { parser: Markdown, nodeTypes: SPLITTABLE_NODE_TYPES.markdown },
+      md: { parser: Markdown, nodeTypes: SPLITTABLE_NODE_TYPES.markdown },
+      php: { parser: PHP, nodeTypes: SPLITTABLE_NODE_TYPES.php },
+      prisma: { parser: Prisma, nodeTypes: SPLITTABLE_NODE_TYPES.prisma },
+      scss: { parser: SCSS, nodeTypes: SPLITTABLE_NODE_TYPES.scss },
+      sql: { parser: SQL, nodeTypes: SPLITTABLE_NODE_TYPES.sql },
+      toml: { parser: TOML, nodeTypes: SPLITTABLE_NODE_TYPES.toml },
+      vue: { parser: Vue, nodeTypes: SPLITTABLE_NODE_TYPES.vue },
+      yaml: { parser: YAML, nodeTypes: SPLITTABLE_NODE_TYPES.yaml },
+      yml: { parser: YAML, nodeTypes: SPLITTABLE_NODE_TYPES.yaml },
     };
 
     return langMap[language.toLowerCase()] || null;
@@ -369,22 +539,34 @@ export class AstCodeSplitter implements Splitter {
    */
   static isLanguageSupported(language: string): boolean {
     const supportedLanguages = [
-      "javascript",
-      "js",
-      "typescript",
-      "ts",
-      "python",
-      "py",
+      "javascript", "js",
+      "typescript", "ts",
+      "python", "py",
       "java",
-      "cpp",
-      "c++",
-      "c",
+      "cpp", "c++", "c",
       "go",
-      "rust",
-      "rs",
-      "cs",
-      "csharp",
+      "rust", "rs",
+      "cs", "csharp",
       "scala",
+      "tsx",
+      "angular",
+      "bash", "sh", "zsh",
+      "css",
+      "elixir", "ex", "exs",
+      "hcl", "terraform", "tf",
+      "html", "htm",
+      "jinja2", "jinja", "j2",
+      "json",
+      "kotlin", "kt", "kts",
+      "markdown", "md",
+      "php",
+      "prisma",
+      "ruby", "rb",
+      "scss",
+      "sql",
+      "toml",
+      "vue",
+      "yaml", "yml",
     ];
     return supportedLanguages.includes(language.toLowerCase());
   }

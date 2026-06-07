@@ -28,7 +28,14 @@ All extension sources are combined together:
 
 ### 1. Default Extensions
 Built-in supported file extensions including:
-- Programming languages: `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.java`, `.cpp`, `.c`, `.h`, `.hpp`, `.cs`, `.go`, `.rs`, `.php`, `.rb`, `.swift`, `.kt`, `.scala`, `.m`, `.mm`, `.dart`, `.sol`
+- Programming languages: `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.java`, `.cpp`, `.c`, `.h`, `.hpp`, `.cs`, `.go`, `.rs`, `.php`, `.rb`, `.swift`, `.kt`, `.kts`, `.scala`, `.m`, `.mm`, `.dart`, `.sol`
+- Elixir: `.ex`, `.exs`
+- HCL / Terraform: `.hcl`, `.tf`
+- Prisma schema: `.prisma`
+- Vue single-file components: `.vue`
+- Web / markup / styles: `.html`, `.htm`, `.css`, `.scss`
+- Data / config: `.json`, `.yaml`, `.yml`, `.toml`, `.sql`
+- Shell scripts: `.sh`, `.bash`
 - Documentation: `.md`, `.markdown`, `.ipynb`
 
 For more details, see [DEFAULT_SUPPORTED_EXTENSIONS](../../packages/core/src/context.ts) in the context.ts file.
@@ -38,12 +45,12 @@ For more details, see [DEFAULT_SUPPORTED_EXTENSIONS](../../packages/core/src/con
 Additional extensions passed dynamically via MCP `customExtensions` parameter:
 ```json
 {
-  "customExtensions": [".vue", ".svelte", ".astro"]
+  "customExtensions": [".svelte", ".astro", ".jinja2"]
 }
 ```
 Just dynamically tell the agent what extensions you want to index to invoke this parameter. For example:
 ```
-"Index this codebase, and include .vue, .svelte, .astro files"
+"Index this codebase, and include .svelte, .astro files"
 ```
 
 ### 3. Environment Variable Extensions

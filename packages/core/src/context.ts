@@ -36,14 +36,27 @@ export class IndexAbortError extends Error {
 }
 
 const DEFAULT_SUPPORTED_EXTENSIONS = [
-    // Programming languages
+    // Programming languages (original)
     '.ts', '.tsx', '.js', '.jsx', '.py', '.java', '.cpp', '.c', '.h', '.hpp',
-    '.cs', '.go', '.rs', '.php', '.rb', '.swift', '.kt', '.scala', '.m', '.mm',
-    '.dart', '.sol',
+    '.cs', '.go', '.rs', '.php', '.rb', '.swift', '.kt', '.kts', '.scala',
+    '.m', '.mm', '.dart', '.sol',
+    // Languages with new AST parser support
+    '.ex', '.exs',       // Elixir
+    '.hcl', '.tf',       // HCL / Terraform
+    '.prisma',           // Prisma schema
+    '.vue',              // Vue single-file components
+    // Web: markup, styles, data
+    '.html', '.htm',     // HTML (Angular/Vue templates, static pages)
+    '.css',              // CSS
+    '.scss',             // SCSS
+    '.json',             // JSON (configs, schemas)
+    '.yaml', '.yml',     // YAML (CI/CD, k8s, docker-compose)
+    '.toml',             // TOML (Cargo.toml, pyproject.toml)
+    '.sql',              // SQL schemas and queries
+    // Shell scripts
+    '.sh', '.bash',      // Bash / POSIX shell
     // Text and markup files
     '.md', '.markdown', '.ipynb',
-    // '.txt',  '.json', '.yaml', '.yml', '.xml', '.html', '.htm',
-    // '.css', '.scss', '.less', '.sql', '.sh', '.bash', '.env'
 ];
 
 const DEFAULT_IGNORE_PATTERNS = [
@@ -1030,7 +1043,7 @@ export class Context {
     private getLanguageFromExtension(ext: string): string {
         const languageMap: Record<string, string> = {
             '.ts': 'typescript',
-            '.tsx': 'typescript',
+            '.tsx': 'tsx',
             '.js': 'javascript',
             '.jsx': 'javascript',
             '.py': 'python',
@@ -1046,12 +1059,33 @@ export class Context {
             '.rb': 'ruby',
             '.swift': 'swift',
             '.kt': 'kotlin',
+            '.kts': 'kotlin',
             '.scala': 'scala',
             '.m': 'objective-c',
             '.mm': 'objective-c',
             '.dart': 'dart',
             '.sol': 'solidity',
-            '.ipynb': 'jupyter'
+            '.ipynb': 'jupyter',
+            // New AST-supported languages
+            '.ex': 'elixir',
+            '.exs': 'elixir',
+            '.hcl': 'hcl',
+            '.tf': 'hcl',
+            '.prisma': 'prisma',
+            '.vue': 'vue',
+            '.html': 'html',
+            '.htm': 'html',
+            '.css': 'css',
+            '.scss': 'scss',
+            '.json': 'json',
+            '.yaml': 'yaml',
+            '.yml': 'yaml',
+            '.toml': 'toml',
+            '.sql': 'sql',
+            '.sh': 'bash',
+            '.bash': 'bash',
+            '.md': 'markdown',
+            '.markdown': 'markdown',
         };
         return languageMap[ext] || 'text';
     }

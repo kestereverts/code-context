@@ -140,9 +140,19 @@ interface ContextConfig {
 [
   // Programming languages
   '.ts', '.tsx', '.js', '.jsx', '.py', '.java', '.cpp', '.c', '.h', '.hpp',
-  '.cs', '.go', '.rs', '.php', '.rb', '.swift', '.kt', '.scala', '.m', '.mm',
+  '.cs', '.go', '.rs', '.php', '.rb', '.swift', '.kt', '.kts', '.scala', '.m', '.mm',
   '.dart', '.sol',
-  // Text and markup files  
+  // Languages with AST parser support
+  '.ex', '.exs',              // Elixir
+  '.hcl', '.tf',              // HCL / Terraform
+  '.prisma',                  // Prisma schema
+  '.vue',                     // Vue single-file components
+  // Web: markup, styles, data
+  '.html', '.htm', '.css', '.scss',
+  '.json', '.yaml', '.yml', '.toml', '.sql',
+  // Shell scripts
+  '.sh', '.bash',
+  // Documentation
   '.md', '.markdown', '.ipynb'
 ]
 ```

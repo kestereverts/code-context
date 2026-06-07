@@ -1,0 +1,70 @@
+diff --git a/binding.gyp b/binding.gyp
+index ad76d467b97ab3ac0ece39ddd3f6007549c661d5..73beccb1c9b655c4a775e83d44edd80ed912e051 100644
+--- a/binding.gyp
++++ b/binding.gyp
+@@ -1,18 +1,3 @@
+-{
+-  "targets": [
+-    {
+-      "target_name": "tree_sitter_Jinja2_binding",
+-      "include_dirs": [
+-        "<!(node -e \"require('nan')\")",
+-        "src"
+-      ],
+-      "sources": [
+-        "src/parser.c",
+-        "bindings/node/binding.cc"
+-      ],
+-      "cflags_c": [
+-        "-std=c99",
+-      ]
+-    }
+-  ]
+-}
++{"targets": [{"target_name": "tree_sitter_jinja2_binding",
++"dependencies": ["<!(node -p \"require('node-addon-api').targets\"):node_addon_api_except"],
++"include_dirs": ["src"], "sources": ["bindings/node/binding.cc", "src/parser.c"], "cflags_c": ["-std=c11"]}]}
+diff --git a/bindings/node/binding.cc b/bindings/node/binding.cc
+index 0695ec3a6845a633306850e5f89b2b641d34d796..763408ee498406a1d441f74a4edfcc3b5c414334 100644
+--- a/bindings/node/binding.cc
++++ b/bindings/node/binding.cc
+@@ -1,28 +1,12 @@
+-#include "tree_sitter/parser.h"
+-#include <node.h>
+-#include "nan.h"
+-
+-using namespace v8;
+-
+-extern "C" TSLanguage * tree_sitter_jinja2();
+-
+-namespace {
+-
+-NAN_METHOD(New) {}
+-
+-void Init(Local<Object> exports, Local<Object> module) {
+-  Local<FunctionTemplate> tpl = Nan::New<FunctionTemplate>(New);
+-  tpl->SetClassName(Nan::New("Language").ToLocalChecked());
+-  tpl->InstanceTemplate()->SetInternalFieldCount(1);
+-
+-  Local<Function> constructor = Nan::GetFunction(tpl).ToLocalChecked();
+-  Local<Object> instance = constructor->NewInstance(Nan::GetCurrentContext()).ToLocalChecked();
+-  Nan::SetInternalFieldPointer(instance, 0, tree_sitter_jinja2());
+-
+-  Nan::Set(instance, Nan::New("name").ToLocalChecked(), Nan::New("jinja2").ToLocalChecked());
+-  Nan::Set(module, Nan::New("exports").ToLocalChecked(), instance);
++#include <napi.h>
++typedef struct TSLanguage TSLanguage;
++extern "C" TSLanguage *tree_sitter_jinja2();
++const napi_type_tag LANGUAGE_TYPE_TAG = {0x8AF2E5212AD58ABF, 0xD5006CAD83ABBA16};
++Napi::Object Init(Napi::Env env, Napi::Object exports) {
++    exports["name"] = Napi::String::New(env, "jinja2");
++    auto language = Napi::External<TSLanguage>::New(env, tree_sitter_jinja2());
++    language.TypeTag(&LANGUAGE_TYPE_TAG);
++    exports["language"] = language;
++    return exports;
+ }
+-
+-NODE_MODULE(tree_sitter_jinja2_binding, Init)
+-
+-}  // namespace
++NODE_API_MODULE(tree_sitter_jinja2_binding, Init)
