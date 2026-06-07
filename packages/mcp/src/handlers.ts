@@ -48,11 +48,12 @@ export class ToolHandlers {
                 console.warn(`[SNAPSHOT-RECOVERY] Collection '${collectionName}' truly empty — NOT writing recovered entry (would poison client)`);
                 return null;
             }
-            // rowCount is chunk count, not file count. Without a metadata query
-            // we don't have the real file count; the snapshot will be corrected
-            // on the next full index. Using rowCount for both is imprecise but
-            // keeps the state non-zero so the client doesn't misread it as empty.
-            return { indexedFiles: rowCount, totalChunks: rowCount };
+            // rowCount is a chunk count, not a file count. We have no cheap
+            // file-count query here, so report files as -1 ("unknown") rather
+            // than lying with the chunk count — that previously surfaced as a
+            // bogus "N files, N chunks" with identical numbers. totalChunks is
+            // accurate; indexedFiles is corrected on the next full index.
+            return { indexedFiles: -1, totalChunks: rowCount };
         } catch (error) {
             console.warn(`[SNAPSHOT-RECOVERY] Failed to query stats for '${codebasePath}':`, error);
             return null;
@@ -116,12 +117,12 @@ export class ToolHandlers {
                 }
 
                 if (rowCount > 0) {
-                    // Heal: rewrite with real row count. rowCount is chunk count;
-                    // without a cheap file-count query we reuse it for both fields.
-                    // Imprecise but keeps the state non-zero and will be corrected
-                    // on the next full index.
+                    // Heal: rewrite with real chunk count. rowCount is a chunk
+                    // count; we have no cheap file-count query, so mark files as
+                    // -1 ("unknown") instead of mislabeling the chunk count as a
+                    // file count. Corrected on the next full index.
                     this.snapshotManager.setCodebaseIndexed(codebasePath, {
-                        indexedFiles: rowCount,
+                        indexedFiles: -1,
                         totalChunks: rowCount,
                         status: 'completed' as const,
                     });
@@ -293,6 +294,17 @@ export class ToolHandlers {
             // so we don't persist a poisoning 0/0+completed entry (Issue #295).
             for (const cloudCodebase of cloudCodebases) {
                 if (!localCodebases.has(cloudCodebase)) {
+                    // Only recover codebases that are genuinely absent locally.
+                    // A codebase mid-index (status 'indexing') or failed is NOT in
+                    // localCodebases (that set is 'indexed'-only), but it is NOT
+                    // missing — writing a 'completed' recovery entry here would
+                    // clobber the live indexing state and report the index as done
+                    // before the real indexer finishes (with a bogus row count).
+                    const localStatus = this.snapshotManager.getCodebaseStatus(cloudCodebase);
+                    if (localStatus !== 'not_found') {
+                        console.log(`[SYNC-CLOUD] ⏭️  Skipped recovery for ${cloudCodebase} (locally '${localStatus}', not missing)`);
+                        continue;
+                    }
                     const stats = await this.queryCollectionStats(cloudCodebase);
                     if (stats) {
                         this.snapshotManager.setCodebaseIndexed(cloudCodebase, {
@@ -1033,7 +1045,13 @@ export class ToolHandlers {
                     if (info && 'indexedFiles' in info) {
                         const indexedInfo = info as any;
                         statusMessage = `✅ Codebase '${statusCodebasePath}' is fully indexed and ready for search.`;
-                        statusMessage += `\n📊 Statistics: ${indexedInfo.indexedFiles} files, ${indexedInfo.totalChunks} chunks`;
+                        // indexedFiles may be -1 ("unknown") when the entry was
+                        // populated from a recovery/sync path that only had a chunk
+                        // count. Don't print a fabricated file number in that case.
+                        const filesText = typeof indexedInfo.indexedFiles === 'number' && indexedInfo.indexedFiles >= 0
+                            ? `${indexedInfo.indexedFiles} files`
+                            : 'unknown files';
+                        statusMessage += `\n📊 Statistics: ${filesText}, ${indexedInfo.totalChunks} chunks`;
                         statusMessage += `\n📅 Status: ${indexedInfo.indexStatus}`;
                         statusMessage += `\n🕐 Last updated: ${new Date(indexedInfo.lastUpdated).toLocaleString()}`;
                     } else {

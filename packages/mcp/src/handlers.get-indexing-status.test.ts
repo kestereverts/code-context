@@ -64,3 +64,28 @@ test("get_indexing_status syncs cloud state before reading the snapshot", async 
         assert.equal(snapshotManager.getCodebaseStatus(codebasePath), "indexed");
     });
 });
+
+test("get_indexing_status prints 'unknown files' when file count is -1", async () => {
+    await withTempHome(async (tempRoot) => {
+        const codebasePath = path.join(tempRoot, "repo");
+        await mkdir(codebasePath, { recursive: true });
+
+        const snapshotManager = new SnapshotManager();
+        // Simulate a recovery/sync-populated entry: real chunk count, file count
+        // unknown (-1). Must not be rendered as a fabricated "N files, N chunks".
+        snapshotManager.setCodebaseIndexed(codebasePath, {
+            indexedFiles: -1,
+            totalChunks: 1000,
+            status: "completed",
+        });
+
+        const handlers = new ToolHandlers({} as any, snapshotManager);
+        (handlers as any).syncIndexedCodebasesFromCloud = async () => { };
+
+        const result = await handlers.handleGetIndexingStatus({ path: codebasePath });
+
+        assert.equal(result.isError, undefined);
+        assert.match(result.content[0].text, /unknown files, 1000 chunks/);
+        assert.doesNotMatch(result.content[0].text, /-1 files/);
+    });
+});
