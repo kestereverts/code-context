@@ -51,6 +51,7 @@ interface CodebaseInfoBase extends CodebaseIndexOptions {
 export interface CodebaseInfoIndexing extends CodebaseInfoBase {
     status: 'indexing';
     indexingPercentage: number;  // Current progress percentage
+    phase?: string;              // Human-readable current phase (e.g. batch-API wait)
 }
 
 // Indexed state - when indexing completed successfully
@@ -140,6 +141,9 @@ export function createMcpConfig(): ContextMcpConfig {
     console.log(`[DEBUG]   EMBEDDING_MODEL: ${envManager.get('EMBEDDING_MODEL') || 'NOT SET'}`);
     console.log(`[DEBUG]   EMBEDDING_DIMENSION: ${envManager.get('EMBEDDING_DIMENSION') || 'NOT SET'}`);
     console.log(`[DEBUG]   OLLAMA_MODEL: ${envManager.get('OLLAMA_MODEL') || 'NOT SET'}`);
+    console.log(`[DEBUG]   CONTEXTUAL_RETRIEVAL_ENABLED: ${envManager.get('CONTEXTUAL_RETRIEVAL_ENABLED') || 'NOT SET'}`);
+    console.log(`[DEBUG]   CONTEXTUAL_RETRIEVAL_MODEL: ${envManager.get('CONTEXTUAL_RETRIEVAL_MODEL') || 'NOT SET'}`);
+    console.log(`[DEBUG]   CONTEXTUAL_RETRIEVAL_BATCH: ${envManager.get('CONTEXTUAL_RETRIEVAL_BATCH') || 'NOT SET'}`);
     console.log(`[DEBUG]   GEMINI_API_KEY: ${envManager.get('GEMINI_API_KEY') ? 'SET (length: ' + envManager.get('GEMINI_API_KEY')!.length + ')' : 'NOT SET'}`);
     console.log(`[DEBUG]   OPENAI_API_KEY: ${envManager.get('OPENAI_API_KEY') ? 'SET (length: ' + envManager.get('OPENAI_API_KEY')!.length + ')' : 'NOT SET'}`);
     console.log(`[DEBUG]   MILVUS_ADDRESS: ${envManager.get('MILVUS_ADDRESS') || 'NOT SET'}`);

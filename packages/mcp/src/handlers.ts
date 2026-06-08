@@ -603,7 +603,7 @@ export class ToolHandlers {
             console.log(`[BACKGROUND-INDEX] 🚀 Beginning codebase indexing process...`);
             const stats = await this.context.indexCodebase(absolutePath, (progress) => {
                 // Update progress in snapshot manager using new method
-                this.snapshotManager.setCodebaseIndexing(absolutePath, progress.percentage);
+                this.snapshotManager.setCodebaseIndexing(absolutePath, progress.percentage, undefined, progress.phase);
 
                 // Save snapshot periodically (every 2 seconds to avoid too frequent saves)
                 const currentTime = Date.now();
@@ -1065,13 +1065,18 @@ export class ToolHandlers {
                         const progressPercentage = indexingInfo.indexingPercentage || 0;
                         statusMessage = `🔄 Codebase '${statusCodebasePath}' is currently being indexed. Progress: ${progressPercentage.toFixed(1)}%`;
 
-                        // Add more detailed status based on progress
-                        if (progressPercentage < 10) {
+                        // Prefer the precise phase reported by the indexer (e.g. a
+                        // long async Batch API wait) over a percentage-based guess,
+                        // so observers don't read a legitimately-slow phase as a stall.
+                        if (indexingInfo.phase) {
+                            statusMessage += ` (${indexingInfo.phase})`;
+                        } else if (progressPercentage < 10) {
                             statusMessage += ' (Preparing and scanning files...)';
                         } else if (progressPercentage < 100) {
                             statusMessage += ' (Processing files and generating embeddings...)';
                         }
                         statusMessage += `\n🕐 Last updated: ${new Date(indexingInfo.lastUpdated).toLocaleString()}`;
+                        statusMessage += `\n💡 While a phase like a Batch API wait is shown, a stalled run is indicated by the "Last updated" time no longer advancing — not by the percentage staying constant.`;
                     } else {
                         statusMessage = `🔄 Codebase '${statusCodebasePath}' is currently being indexed.`;
                     }

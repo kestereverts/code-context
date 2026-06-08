@@ -394,7 +394,7 @@ export class SnapshotManager {
     /**
      * Set codebase to indexing status
      */
-    public setCodebaseIndexing(codebasePath: string, progress: number = 0, indexOptions?: CodebaseIndexOptions): void {
+    public setCodebaseIndexing(codebasePath: string, progress: number = 0, indexOptions?: CodebaseIndexOptions, phase?: string): void {
         this.indexingCodebases.set(codebasePath, progress);
 
         // Remove from other states
@@ -407,6 +407,7 @@ export class SnapshotManager {
         const info: CodebaseInfoIndexing = {
             status: 'indexing',
             indexingPercentage: progress,
+            ...(phase ? { phase } : {}),
             ...resolvedIndexOptions,
             lastUpdated: new Date().toISOString()
         };

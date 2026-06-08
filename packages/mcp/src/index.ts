@@ -240,7 +240,7 @@ Preconditions:
           },
           {
             name: "get_indexing_status",
-            description: `Check whether a codebase is indexed and ready for \`search_code\`. Returns indexing progress (a percentage while building), completion status, file/chunk counts, and when the index was last updated. Use this to decide your next move: if \`search_code\` returns nothing or looks stale, check here BEFORE concluding the code is absent — the index may be missing, mid-build, or out of date rather than the code not existing. If it is not indexed, call \`index_codebase\`. You MUST provide an ABSOLUTE path.`,
+            description: `Check whether a codebase is indexed and ready for \`search_code\`. Returns indexing progress (a percentage and a current-phase label while building), completion status, file/chunk counts, and when the index was last updated. Use this to decide your next move: if \`search_code\` returns nothing or looks stale, check here BEFORE concluding the code is absent — the index may be missing, mid-build, or out of date rather than the code not existing. If it is not indexed, call \`index_codebase\`. Judging liveness: some phases legitimately hold the percentage constant for a long time (e.g. waiting on an asynchronous Batch API job, which can take minutes to hours) — treat the run as healthy as long as the "Last updated" timestamp keeps advancing between polls, and only suspect a stall when that timestamp stops moving. You MUST provide an ABSOLUTE path.`,
             inputSchema: {
               type: "object",
               properties: {

@@ -1,6 +1,13 @@
 import Parser from "tree-sitter";
 import { Splitter, CodeChunk } from "./index";
 
+// Internal: pair an extracted chunk with its source AST node so that oversized
+// chunks can be re-split along child node boundaries during refinement.
+interface NodeChunk {
+  chunk: CodeChunk;
+  node: Parser.SyntaxNode;
+}
+
 // Language parsers — original languages
 const JavaScript = require("tree-sitter-javascript");
 const TypeScript = require("tree-sitter-typescript").typescript;
@@ -113,14 +120,8 @@ const SPLITTABLE_NODE_TYPES = {
     "keyframes_statement",
     "supports_statement",
   ],
-  html: [
-    "element",
-    "script_element",
-    "style_element",
-  ],
-  json: [
-    "pair",
-  ],
+  html: ["element", "script_element", "style_element"],
+  json: ["pair"],
   bash: [
     "function_definition",
     "if_statement",
@@ -128,27 +129,15 @@ const SPLITTABLE_NODE_TYPES = {
     "while_statement",
     "case_statement",
   ],
-  ruby: [
-    "method",
-    "class",
-    "module",
-    "singleton_method",
-    "singleton_class",
-  ],
+  ruby: ["method", "class", "module", "singleton_method", "singleton_class"],
   angular: [
     "element",
     "structural_directive",
     "script_element",
     "style_element",
   ],
-  elixir: [
-    "call",
-    "anonymous_function",
-  ],
-  hcl: [
-    "block",
-    "attribute",
-  ],
+  elixir: ["call", "anonymous_function"],
+  hcl: ["block", "attribute"],
   jinja2: [
     "block_statement",
     "macro_statement",
@@ -185,12 +174,7 @@ const SPLITTABLE_NODE_TYPES = {
     "type_declaration",
     "view_declaration",
   ],
-  scss: [
-    "rule_set",
-    "mixin_statement",
-    "function_statement",
-    "at_rule",
-  ],
+  scss: ["rule_set", "mixin_statement", "function_statement", "at_rule"],
   sql: [
     "select_statement",
     "create_function_statement",
@@ -198,21 +182,9 @@ const SPLITTABLE_NODE_TYPES = {
     "create_index_statement",
     "create_type_statement",
   ],
-  toml: [
-    "table",
-    "table_array_element",
-    "pair",
-  ],
-  vue: [
-    "element",
-    "script_element",
-    "style_element",
-    "template_element",
-  ],
-  yaml: [
-    "block_mapping_pair",
-    "document",
-  ],
+  toml: ["table", "table_array_element", "pair"],
+  vue: ["element", "script_element", "style_element", "template_element"],
+  yaml: ["block_mapping_pair", "document"],
 };
 
 export class AstCodeSplitter implements Splitter {
@@ -286,7 +258,12 @@ export class AstCodeSplitter implements Splitter {
       );
 
       // If chunks are too large, split them further
-      const refinedChunks = await this.refineChunks(chunks, code);
+      const refinedChunks = await this.refineChunks(
+        chunks,
+        code,
+        language,
+        filePath,
+      );
 
       return refinedChunks;
     } catch (error) {
@@ -377,8 +354,8 @@ export class AstCodeSplitter implements Splitter {
     splittableTypes: string[],
     language: string,
     filePath?: string,
-  ): CodeChunk[] {
-    const chunks: CodeChunk[] = [];
+  ): NodeChunk[] {
+    const chunks: NodeChunk[] = [];
     const codeLines = code.split("\n");
 
     const traverse = (currentNode: Parser.SyntaxNode) => {
@@ -394,12 +371,15 @@ export class AstCodeSplitter implements Splitter {
         // Only create chunk if it has meaningful content
         if (nodeText.trim().length > 0) {
           chunks.push({
-            content: nodeText,
-            metadata: {
-              startLine,
-              endLine,
-              language,
-              filePath,
+            node: currentNode,
+            chunk: {
+              content: nodeText,
+              metadata: {
+                startLine,
+                endLine,
+                language,
+                filePath,
+              },
             },
           });
         }
@@ -413,15 +393,19 @@ export class AstCodeSplitter implements Splitter {
 
     traverse(node);
 
-    // If no meaningful chunks found, create a single chunk with the entire code
+    // If no meaningful chunks found, fall back to the whole file (still backed
+    // by the root node so oversized files split along top-level boundaries).
     if (chunks.length === 0) {
       chunks.push({
-        content: code,
-        metadata: {
-          startLine: 1,
-          endLine: codeLines.length,
-          language,
-          filePath,
+        node,
+        chunk: {
+          content: code,
+          metadata: {
+            startLine: 1,
+            endLine: codeLines.length,
+            language,
+            filePath,
+          },
         },
       });
     }
@@ -430,25 +414,174 @@ export class AstCodeSplitter implements Splitter {
   }
 
   private async refineChunks(
-    chunks: CodeChunk[],
+    nodeChunks: NodeChunk[],
     originalCode: string,
+    language: string,
+    filePath?: string,
   ): Promise<CodeChunk[]> {
     const refinedChunks: CodeChunk[] = [];
 
-    for (const chunk of chunks) {
+    for (const { chunk, node } of nodeChunks) {
       if (chunk.content.length <= this.chunkSize) {
         refinedChunks.push(chunk);
       } else {
-        // Split large chunks using character-based splitting
-        const subChunks = this.splitLargeChunk(chunk, originalCode);
-        refinedChunks.push(...subChunks);
+        // Oversized AST node: split along its child node boundaries (recursively)
+        // so logical units stay intact, instead of slicing at an arbitrary
+        // character count.
+        refinedChunks.push(
+          ...this.splitNodeBySize(node, originalCode, language, filePath),
+        );
       }
     }
 
-    return this.addOverlap(refinedChunks);
+    // No cross-chunk overlap here: AST-aligned chunks already end on logical
+    // boundaries, so overlap only adds noise (stray braces/blank lines).
+    // Overlap is applied selectively inside splitLargeChunk, which is the only
+    // place cuts land at arbitrary character positions.
+    return refinedChunks;
   }
 
-  private splitLargeChunk(chunk: CodeChunk, originalCode: string): CodeChunk[] {
+  /**
+   * Build a CodeChunk from a byte range of the source. Returns null if the
+   * range is empty/whitespace-only.
+   */
+  private makeRangeChunk(
+    code: string,
+    startIndex: number,
+    endIndex: number,
+    startLine: number,
+    endLine: number,
+    language: string,
+    filePath?: string,
+  ): CodeChunk | null {
+    const content = code.slice(startIndex, endIndex);
+    if (content.trim().length === 0) {
+      return null;
+    }
+    return {
+      content,
+      metadata: { startLine, endLine, language, filePath },
+    };
+  }
+
+  /**
+   * Split an oversized AST node into sub-chunks whose cuts fall on the node's
+   * direct child boundaries, keeping logical units (e.g. methods) intact.
+   *
+   * Children are grouped greedily until adding the next would exceed chunkSize,
+   * then a cut is made at the previous child boundary. A single child that is
+   * itself larger than chunkSize is split recursively along ITS children; a
+   * childless leaf that is still too large falls back to line-based slicing.
+   */
+  private splitNodeBySize(
+    node: Parser.SyntaxNode,
+    code: string,
+    language: string,
+    filePath?: string,
+  ): CodeChunk[] {
+    const children = node.children;
+
+    // No structural boundaries to cut on (leaf): last-resort line slicing,
+    // scoped to this node only.
+    if (children.length === 0) {
+      return this.splitLargeChunk({
+        content: code.slice(node.startIndex, node.endIndex),
+        metadata: {
+          startLine: node.startPosition.row + 1,
+          endLine: node.endPosition.row + 1,
+          language,
+          filePath,
+        },
+      });
+    }
+
+    const result: CodeChunk[] = [];
+    let segStartIndex = node.startIndex;
+    let segStartLine = node.startPosition.row + 1;
+    let prevEndIndex = node.startIndex;
+    let prevEndLine = segStartLine;
+    let childrenInSeg = 0;
+
+    const flush = (endIndex: number, endLine: number) => {
+      const chunk = this.makeRangeChunk(
+        code,
+        segStartIndex,
+        endIndex,
+        segStartLine,
+        endLine,
+        language,
+        filePath,
+      );
+      if (chunk) result.push(chunk);
+    };
+
+    for (const child of children) {
+      const childLen = child.endIndex - child.startIndex;
+
+      // A single child larger than chunkSize can't fit any segment: recurse into
+      // its own boundaries. Any pending text (header keywords, accumulated small
+      // siblings like `export`/`class Foo`) is folded into the recursion's first
+      // chunk rather than emitted as a tiny standalone fragment.
+      if (childLen > this.chunkSize) {
+        const childChunks = this.splitNodeBySize(
+          child,
+          code,
+          language,
+          filePath,
+        );
+        if (child.startIndex > segStartIndex && childChunks.length > 0) {
+          const pending = code.slice(segStartIndex, child.startIndex);
+          childChunks[0].content = pending + childChunks[0].content;
+          childChunks[0].metadata.startLine = segStartLine;
+        } else if (child.startIndex > segStartIndex) {
+          flush(child.startIndex, child.startPosition.row + 1);
+        }
+        result.push(...childChunks);
+        segStartIndex = child.endIndex;
+        segStartLine = child.endPosition.row + 1;
+        prevEndIndex = child.endIndex;
+        prevEndLine = segStartLine;
+        childrenInSeg = 0;
+        continue;
+      }
+
+      // Would appending this (non-oversized) child overflow the current segment?
+      // If so, and we already have at least one child queued, cut at the
+      // previous boundary.
+      if (
+        child.endIndex - segStartIndex > this.chunkSize &&
+        childrenInSeg > 0
+      ) {
+        flush(prevEndIndex, prevEndLine);
+        segStartIndex = prevEndIndex;
+        segStartLine = prevEndLine;
+        childrenInSeg = 0;
+      }
+
+      prevEndIndex = child.endIndex;
+      prevEndLine = child.endPosition.row + 1;
+      childrenInSeg++;
+    }
+
+    // Trailing content up to the node's end.
+    if (node.endIndex > segStartIndex) {
+      if (childrenInSeg === 0 && result.length > 0) {
+        // Only structural tail remains (e.g. a closing brace after a cut or
+        // recursion). Fold it into the previous chunk rather than emitting a
+        // near-empty fragment.
+        const tail = code.slice(segStartIndex, node.endIndex);
+        const last = result[result.length - 1];
+        last.content += tail;
+        last.metadata.endLine = node.endPosition.row + 1;
+      } else {
+        flush(node.endIndex, node.endPosition.row + 1);
+      }
+    }
+
+    return result;
+  }
+
+  private splitLargeChunk(chunk: CodeChunk): CodeChunk[] {
     const lines = chunk.content.split("\n");
     const subChunks: CodeChunk[] = [];
     let currentChunk = "";
@@ -496,7 +629,9 @@ export class AstCodeSplitter implements Splitter {
       });
     }
 
-    return subChunks;
+    // These cuts fall at arbitrary line positions, so overlap helps recover
+    // context lost at the boundary. (AST-aligned chunks deliberately skip this.)
+    return this.addOverlap(subChunks);
   }
 
   private addOverlap(chunks: CodeChunk[]): CodeChunk[] {
@@ -539,34 +674,55 @@ export class AstCodeSplitter implements Splitter {
    */
   static isLanguageSupported(language: string): boolean {
     const supportedLanguages = [
-      "javascript", "js",
-      "typescript", "ts",
-      "python", "py",
+      "javascript",
+      "js",
+      "typescript",
+      "ts",
+      "python",
+      "py",
       "java",
-      "cpp", "c++", "c",
+      "cpp",
+      "c++",
+      "c",
       "go",
-      "rust", "rs",
-      "cs", "csharp",
+      "rust",
+      "rs",
+      "cs",
+      "csharp",
       "scala",
       "tsx",
       "angular",
-      "bash", "sh", "zsh",
+      "bash",
+      "sh",
+      "zsh",
       "css",
-      "elixir", "ex", "exs",
-      "hcl", "terraform", "tf",
-      "html", "htm",
-      "jinja2", "jinja", "j2",
+      "elixir",
+      "ex",
+      "exs",
+      "hcl",
+      "terraform",
+      "tf",
+      "html",
+      "htm",
+      "jinja2",
+      "jinja",
+      "j2",
       "json",
-      "kotlin", "kt", "kts",
-      "markdown", "md",
+      "kotlin",
+      "kt",
+      "kts",
+      "markdown",
+      "md",
       "php",
       "prisma",
-      "ruby", "rb",
+      "ruby",
+      "rb",
       "scss",
       "sql",
       "toml",
       "vue",
-      "yaml", "yml",
+      "yaml",
+      "yml",
     ];
     return supportedLanguages.includes(language.toLowerCase());
   }

@@ -1,5 +1,6 @@
 export * from './splitter';
 export * from './embedding';
+export * from './enrichment';
 export * from './vectordb';
 export * from './types';
 export * from './context';
