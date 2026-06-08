@@ -180,7 +180,6 @@ export class Context {
   private collectionNameOverride?: string;
   private contextualizer?: GeminiContextualizer;
   private useBatchContextualization = false;
-  private batchContextMap?: Map<string, string>;
   private warnedOverrideSanitization = new Set<string>();
   private synchronizers = new Map<string, FileSynchronizer>();
 
@@ -581,13 +580,13 @@ export class Context {
     // blurb in a single async Gemini Batch API job before the streaming
     // embed/insert pass. Degrades gracefully — on failure we index without
     // contextual enrichment rather than aborting.
-    this.batchContextMap = undefined;
+    let batchContextMap: Map<string, string> | undefined;
     const usedBatchPrepass = !!(
       this.contextualizer && this.useBatchContextualization
     );
     if (usedBatchPrepass) {
       try {
-        await this.precomputeBatchContexts(
+        batchContextMap = await this.precomputeBatchContexts(
           codeFiles,
           codebasePath,
           splitter,
@@ -600,7 +599,7 @@ export class Context {
           `[Context] ⚠️  Batch context pre-pass failed; indexing without contextual retrieval:`,
           error,
         );
-        this.batchContextMap = new Map();
+        batchContextMap = new Map();
       }
     }
 
@@ -629,6 +628,7 @@ export class Context {
       },
       splitter,
       signal,
+      batchContextMap,
     );
 
     console.log(
@@ -1225,6 +1225,7 @@ export class Context {
     ) => void,
     splitter: Splitter = this.codeSplitter,
     signal?: AbortSignal,
+    contextMap?: Map<string, string>,
   ): Promise<{
     processedFiles: number;
     totalChunks: number;
@@ -1281,7 +1282,7 @@ export class Context {
           // Process batch when buffer reaches EMBEDDING_BATCH_SIZE
           if (chunkBuffer.length >= EMBEDDING_BATCH_SIZE) {
             try {
-              await this.processChunkBuffer(chunkBuffer);
+              await this.processChunkBuffer(chunkBuffer, contextMap);
             } catch (error) {
               const searchType = isHybrid === true ? "hybrid" : "regular";
               console.error(
@@ -1324,7 +1325,7 @@ export class Context {
         `📝 Processing final batch of ${chunkBuffer.length} chunks for ${searchType}`,
       );
       try {
-        await this.processChunkBuffer(chunkBuffer);
+        await this.processChunkBuffer(chunkBuffer, contextMap);
       } catch (error) {
         console.error(
           `[Context] ❌ Failed to process final chunk batch for ${searchType}:`,
@@ -1354,6 +1355,7 @@ export class Context {
    */
   private async processChunkBuffer(
     chunkBuffer: Array<{ chunk: CodeChunk; codebasePath: string }>,
+    contextMap?: Map<string, string>,
   ): Promise<void> {
     if (chunkBuffer.length === 0) return;
 
@@ -1372,7 +1374,7 @@ export class Context {
     console.log(
       `[Context] 🔄 Processing batch of ${chunks.length} chunks (~${estimatedTokens} tokens) for ${searchType}`,
     );
-    await this.processChunkBatch(chunks, codebasePath);
+    await this.processChunkBatch(chunks, codebasePath, contextMap);
   }
 
   /**
@@ -1400,8 +1402,8 @@ export class Context {
       percentage: number;
     }) => void,
     signal?: AbortSignal,
-  ): Promise<void> {
-    if (!this.contextualizer) return;
+  ): Promise<Map<string, string>> {
+    if (!this.contextualizer) return new Map();
 
     const items: ContextualizeItem[] = [];
     const ids: string[] = [];
@@ -1472,8 +1474,7 @@ export class Context {
     }
 
     if (items.length === 0) {
-      this.batchContextMap = new Map();
-      return;
+      return new Map();
     }
 
     progressCallback?.({
@@ -1511,24 +1512,27 @@ export class Context {
     for (let i = 0; i < ids.length; i++) {
       if (contexts[i]) map.set(ids[i], contexts[i]);
     }
-    this.batchContextMap = map;
     console.log(
       `[Context] ✅ Batch contextualization complete: ${map.size}/${items.length} chunks have context.`,
     );
+    return map;
   }
 
   private async generateChunkContexts(
     chunks: CodeChunk[],
     codebasePath: string,
+    contextMap?: Map<string, string>,
   ): Promise<string[]> {
     if (!this.contextualizer || chunks.length === 0) {
       return new Array(chunks.length).fill("");
     }
 
-    // Batch mode: contexts were precomputed in the pre-pass; look them up by
-    // the same id used at insert time instead of making per-buffer LLM calls.
-    if (this.batchContextMap) {
-      const map = this.batchContextMap;
+    // Batch mode: contexts were precomputed in the pre-pass for THIS run and
+    // passed in; look them up by the same id used at insert time instead of
+    // making per-buffer LLM calls. (The incremental path passes no map, so it
+    // falls through to synchronous enrichment below.)
+    if (contextMap) {
+      const map = contextMap;
       return chunks.map((chunk) => {
         if (!chunk.metadata.filePath) return "";
         const relativePath = path.relative(
@@ -1581,6 +1585,7 @@ export class Context {
   private async processChunkBatch(
     chunks: CodeChunk[],
     codebasePath: string,
+    contextMap?: Map<string, string>,
   ): Promise<void> {
     const isHybrid = this.getIsHybrid();
 
@@ -1588,7 +1593,7 @@ export class Context {
     // When enabled, the blurb is prepended to the text we embed so the dense
     // vector captures how the chunk fits its file. The stored `content` stays
     // verbatim (clean display + unchanged BM25 input).
-    const contexts = await this.generateChunkContexts(chunks, codebasePath);
+    const contexts = await this.generateChunkContexts(chunks, codebasePath, contextMap);
     const embeddingInputs = chunks.map((chunk, index) =>
       contexts[index]
         ? `${contexts[index]}\n\n${chunk.content}`

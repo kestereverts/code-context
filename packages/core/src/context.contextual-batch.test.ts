@@ -5,6 +5,7 @@ import { Context } from './context';
 import { Embedding, EmbeddingVector } from './embedding';
 import { Splitter, CodeChunk } from './splitter';
 import { VectorDatabase } from './vectordb';
+import { FileSynchronizer } from './sync/synchronizer';
 
 // Captures the exact texts handed to embedBatch so we can assert the context
 // blurb was prepended to the embedding input.
@@ -153,6 +154,59 @@ describe('Context batch contextualization pre-pass', () => {
         // Overall progress never goes backwards.
         for (let i = 1; i < pcts.length; i++) {
             expect(pcts[i]).toBeGreaterThanOrEqual(pcts[i - 1]);
+        }
+    });
+
+    it('enriches changed files via the sync path on incremental re-index (not a stale batch map)', async () => {
+        const project = path.join(tempRoot, 'project');
+        await fs.mkdir(project);
+        const fileA = path.join(project, 'a.ts');
+        await fs.writeFile(fileA, 'const a = 1;');
+
+        const contextualizeBatch = jest.fn(async (items: Array<{ chunkContent: string }>) =>
+            items.map(it => `SYNC:${it.chunkContent}`));
+        const contextualizeBatchViaBatchApi = jest.fn(async (items: Array<{ chunkContent: string }>) =>
+            items.map(it => `BATCH:${it.chunkContent}`));
+        const fake = { contextualizeBatch, contextualizeBatchViaBatchApi } as any;
+
+        const vectorDatabase = createVectorDatabase();
+        const context = new Context({
+            embedding: new RecordingEmbedding(),
+            vectorDatabase,
+            codeSplitter: new OneChunkPerFileSplitter(),
+            contextualizer: fake,
+            useBatchContextualization: true,
+        });
+
+        // Full index uses the batch path.
+        await context.indexCodebase(project);
+        expect(contextualizeBatchViaBatchApi).toHaveBeenCalledTimes(1);
+
+        try {
+            const synchronizer = new FileSynchronizer(
+                project,
+                await context.getEffectiveIgnorePatterns(project),
+                context.getEffectiveSupportedExtensions(),
+            );
+            await synchronizer.initialize();
+            context.setSynchronizer(context.getCollectionName(project), synchronizer);
+
+            // Change the file, then re-index incrementally.
+            await fs.writeFile(fileA, 'const a = 2;');
+            contextualizeBatchViaBatchApi.mockClear();
+            await context.reindexByChange(project);
+
+            // Incremental path must NOT touch the Batch API; it uses sync enrichment.
+            expect(contextualizeBatchViaBatchApi).not.toHaveBeenCalled();
+            expect(contextualizeBatch).toHaveBeenCalled();
+
+            // The re-inserted chunk carries a SYNC-derived context, never a stale batch one.
+            const docs = vectorDatabase.insert.mock.calls.flatMap(([, d]) => d);
+            const changed = docs.filter(doc => doc.content === 'const a = 2;');
+            expect(changed.length).toBeGreaterThan(0);
+            expect((changed[changed.length - 1].metadata as any).context).toBe('SYNC:const a = 2;');
+        } finally {
+            await FileSynchronizer.deleteSnapshot(project);
         }
     });
 
