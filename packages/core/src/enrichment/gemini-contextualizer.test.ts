@@ -262,6 +262,29 @@ describe('GeminiContextualizer', () => {
             expect(beats.every(b => typeof b.elapsedMs === 'number')).toBe(true);
         });
 
+        it('puts system guidance in systemInstruction, never a "system" role in contents', async () => {
+            let uploadedJsonl = '';
+            mockFilesUpload.mockImplementation(async ({ file }: { file: string }) => {
+                uploadedJsonl = fs.readFileSync(file, 'utf-8');
+                return { name: 'files/in' };
+            });
+            mockBatchCreate.mockResolvedValue({ name: 'batches/x' });
+            mockBatchGet.mockResolvedValue({ state: 'JOB_STATE_SUCCEEDED', dest: { fileName: 'files/out' } });
+            mockFilesDownload.mockImplementation(async ({ downloadPath }: { downloadPath: string }) => {
+                fs.writeFileSync(downloadPath, JSON.stringify({ key: 'req-0', response: candidate('ok') }) + '\n');
+            });
+
+            const ctx = new GeminiContextualizer({ apiKey: 'k', batchPollIntervalMs: 0 });
+            await ctx.contextualizeBatchViaBatchApi(items(1));
+
+            const request = JSON.parse(uploadedJsonl.trim().split('\n')[0]).request;
+            // System guidance lives in systemInstruction (Gemini rejects a system role in contents).
+            expect(request.systemInstruction).toBeDefined();
+            const roles = (request.contents as Array<{ role?: string }>).map(c => c.role);
+            expect(roles).not.toContain('system');
+            expect(roles).toContain('user');
+        });
+
         it('supports the plain `text` field form in result lines', async () => {
             succeedWith([JSON.stringify({ key: 'req-0', response: { text: 'plain' } })]);
 

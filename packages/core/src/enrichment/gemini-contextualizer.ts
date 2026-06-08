@@ -104,7 +104,8 @@ export class GeminiContextualizer {
     this.model = config.model || DEFAULT_MODEL;
     this.maxConcurrency = config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY;
     this.maxFileChars = config.maxFileChars ?? DEFAULT_MAX_FILE_CHARS;
-    this.batchPollIntervalMs = config.batchPollIntervalMs ?? DEFAULT_BATCH_POLL_INTERVAL_MS;
+    this.batchPollIntervalMs =
+      config.batchPollIntervalMs ?? DEFAULT_BATCH_POLL_INTERVAL_MS;
     this.batchMaxWaitMs = config.batchMaxWaitMs ?? DEFAULT_BATCH_MAX_WAIT_MS;
     this.batchMaxBytes = config.batchMaxBytes ?? DEFAULT_BATCH_MAX_BYTES;
   }
@@ -198,7 +199,12 @@ export class GeminiContextualizer {
     for (let g = 0; g < groups.length; g++) {
       const group = groups[g];
       try {
-        const byKey = await this.runFileBatchJob(group, g + 1, groups.length, onProgress);
+        const byKey = await this.runFileBatchJob(
+          group,
+          g + 1,
+          groups.length,
+          onProgress,
+        );
         for (const entry of group) {
           const text = byKey.get(entry.key);
           if (text) results[entry.index] = text;
@@ -216,7 +222,8 @@ export class GeminiContextualizer {
   private packGroups(
     entries: Array<{ index: number; key: string; line: string }>,
   ): Array<Array<{ index: number; key: string; line: string }>> {
-    const groups: Array<Array<{ index: number; key: string; line: string }>> = [];
+    const groups: Array<Array<{ index: number; key: string; line: string }>> =
+      [];
     let current: Array<{ index: number; key: string; line: string }> = [];
     let bytes = 0;
 
@@ -244,7 +251,10 @@ export class GeminiContextualizer {
     const jsonl = group.map((e) => e.line).join("\n") + "\n";
 
     // Upload the JSONL input via a temp file (SDK accepts a file path).
-    const inputPath = path.join(os.tmpdir(), `code-context-batch-in-${Date.now()}-${jobNum}.jsonl`);
+    const inputPath = path.join(
+      os.tmpdir(),
+      `code-context-batch-in-${Date.now()}-${jobNum}.jsonl`,
+    );
     await fs.promises.writeFile(inputPath, jsonl, "utf-8");
     let uploadedName: string | undefined;
     try {
@@ -254,14 +264,17 @@ export class GeminiContextualizer {
       });
       uploadedName = uploaded.name;
     } finally {
-      fs.promises.unlink(inputPath).catch(() => { });
+      fs.promises.unlink(inputPath).catch(() => {});
     }
-    if (!uploadedName) throw new Error("Uploaded batch input file has no resource name");
+    if (!uploadedName)
+      throw new Error("Uploaded batch input file has no resource name");
 
     const created = await this.client.batches.create({
       model: this.model,
       src: uploadedName,
-      config: { displayName: `code-context-contextualizer-${Date.now()}-${jobNum}` },
+      config: {
+        displayName: `code-context-contextualizer-${Date.now()}-${jobNum}`,
+      },
     });
     const name = created.name;
     if (!name) throw new Error("Batch job created without a resource name");
@@ -276,20 +289,28 @@ export class GeminiContextualizer {
     // as a downloadable file (keyed — preferred). Prefer the file.
     const resultFile = job.dest?.fileName;
     if (!resultFile) {
-      throw new Error(`Batch job ${name} succeeded but produced no result file`);
+      throw new Error(
+        `Batch job ${name} succeeded but produced no result file`,
+      );
     }
 
     // NOTE: the SDK's files.download() resolves BEFORE the write to disk
     // finishes (the stream pipe / fs.writeFile callback are not awaited), so we
     // must wait for the file to finish writing before reading it.
-    const outputPath = path.join(os.tmpdir(), `code-context-batch-out-${Date.now()}-${jobNum}.jsonl`);
-    await this.client.files.download({ file: resultFile, downloadPath: outputPath });
+    const outputPath = path.join(
+      os.tmpdir(),
+      `code-context-batch-out-${Date.now()}-${jobNum}.jsonl`,
+    );
+    await this.client.files.download({
+      file: resultFile,
+      downloadPath: outputPath,
+    });
     let content: string;
     try {
       await this.waitForFileSettled(outputPath);
       content = await fs.promises.readFile(outputPath, "utf-8");
     } finally {
-      fs.promises.unlink(outputPath).catch(() => { });
+      fs.promises.unlink(outputPath).catch(() => {});
     }
 
     return this.parseResultsByKey(content);
@@ -335,7 +356,12 @@ export class GeminiContextualizer {
     while (!BATCH_COMPLETED_STATES.has(job.state as string)) {
       // Heartbeat: lets callers advance their own status/timestamp so observers
       // can tell "alive, waiting on async job" apart from "hung".
-      onProgress?.({ jobNum, jobTotal, state: String(job.state), elapsedMs: Date.now() - start });
+      onProgress?.({
+        jobNum,
+        jobTotal,
+        state: String(job.state),
+        elapsedMs: Date.now() - start,
+      });
 
       if (Date.now() >= deadline) {
         // Best-effort cancel so we stop paying for an abandoned job.
@@ -363,7 +389,10 @@ export class GeminiContextualizer {
     if (typeof response.text === "string") return response.text.trim();
     const parts = response.candidates?.[0]?.content?.parts;
     if (Array.isArray(parts)) {
-      return parts.map((p: any) => p?.text || "").join("").trim();
+      return parts
+        .map((p: any) => p?.text || "")
+        .join("")
+        .trim();
     }
     return "";
   }
@@ -371,7 +400,18 @@ export class GeminiContextualizer {
   /** Build a JSONL batch `request` (raw GenerateContentRequest shape) for an item. */
   private buildRequest(item: ContextualizeItem): any {
     return {
-      contents: [{ parts: [{ text: this.promptFor(item) }], role: "user" }],
+      // System guidance must go in systemInstruction — Gemini's `contents` only
+      // accepts the roles "user" and "model"; a "system" role is rejected (400).
+      systemInstruction: {
+        parts: [
+          {
+            text: `You are a semantic indexing assistant for codebases who describes code chunks in the context of their enclosing file. Your writing style is concise, factual, terse, but descriptive. You write identifiers in backticks.`,
+          },
+        ],
+      },
+      contents: [
+        { role: "user", parts: [{ text: this.promptFor(item) }] },
+      ],
       generationConfig: { temperature: 0, maxOutputTokens: 200 },
     };
   }
@@ -385,7 +425,10 @@ export class GeminiContextualizer {
    * SDK's files.download() returns before the on-disk write completes. Resolves
    * once the size is non-zero and stable across two checks, or throws on timeout.
    */
-  private async waitForFileSettled(filePath: string, timeoutMs = 30_000): Promise<void> {
+  private async waitForFileSettled(
+    filePath: string,
+    timeoutMs = 30_000,
+  ): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     let lastSize = -1;
     let stableSince = 0;
@@ -409,7 +452,9 @@ export class GeminiContextualizer {
       }
       await this.sleep(POLL_MS);
     }
-    throw new Error(`Timed out waiting for downloaded result file to finish writing: ${filePath}`);
+    throw new Error(
+      `Timed out waiting for downloaded result file to finish writing: ${filePath}`,
+    );
   }
 
   /** Truncate the enclosing file (if needed) and build the contextualization prompt. */
@@ -430,20 +475,22 @@ export class GeminiContextualizer {
 ${fileContent}
 </document>
 
-Here is a chunk we want to situate within the whole document above:
 <chunk>
 ${chunkContent}
 </chunk>
 
-Write ONE terse line (max 25 words) that helps a search engine retrieve this chunk. State what the code does and where it sits (enclosing class/function/module and key identifiers).
+Write ONE TO THREE terse lines (max 75 words total) that help a semantic (contextual retrieval) search engine understand the meaning of the chunk.
+State what the code in the chunk intends to do inside the context of the document.
+Describe the relationship between the chunk and the rest of the document.
+You may use the file path to infer the document's overall purpose inside the codebase, but be wary of ambiguity.
 
 Rules:
-- No meta-phrases. Never start with or include "This chunk", "This code", "This snippet", "contains", "defines the".
+- No meta-phrases. Never start with or include "This chunk", "This code", "This snippet".
 - No filler adjectives or restating the obvious. Facts only.
-- Write it as a standalone descriptive phrase, not a sentence about the chunk.
-- Output only the line, nothing else.
+- Write it as a standalone descriptive set of phrases, not a sentence about the chunk.
+- Output only the lines, nothing else.
 
-Example good: "FileSynchronizer.compareStates removed-file detection plus getFileHash lookup into the fileHashes map."
-Example bad: "This chunk contains the conclusion of the compareStates method, which identifies removed files."`;
+Example good: "Defines a concrete validation rule using a GIS library for verifying that a province has access to the area, inside a section that configures many validation rules for a geographic data model. Sits in the GeoValidation class.
+Example bad: "This chunk contains a validation rule. The code in this chunk defines a validation rule using a GIS library for verifying that a province has access to the area. This line of code is part of the Geo module."`;
   }
 }
